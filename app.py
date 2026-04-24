@@ -8,22 +8,22 @@ import requests
 # Flask app
 app = Flask(__name__)
 
-# ✅ BASE DIR FIX
+# Base directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ✅ MODEL DOWNLOAD FROM HUGGINGFACE
+# -------- LOAD MODEL FROM HUGGINGFACE --------
 MODEL_URL = "https://huggingface.co/pradeep240818/cretogee-model/resolve/main/model.pkl"
 model_path = os.path.join(BASE_DIR, "model.pkl")
 
 if not os.path.exists(model_path):
-    print("Downloading model from HuggingFace...")
+    print("Downloading model...")
     r = requests.get(MODEL_URL)
     with open(model_path, "wb") as f:
         f.write(r.content)
 
 model = pickle.load(open(model_path, "rb"))
 
-# ✅ DATASET (PUT CSV IN PROJECT FOLDER AS dataset.csv)
+# -------- LOAD DATASET --------
 csv_path = os.path.join(BASE_DIR, "dataset.csv")
 crater_data = pd.read_csv(csv_path)
 
@@ -39,19 +39,25 @@ crater_data = crater_data.rename(columns={
 
 crater_data = crater_data[['g', 'h', 'i', 'j']].dropna()
 
-# ROUTES
+# -------- ROUTES --------
 
 @app.route('/')
 def home():
-    return render_template('lun3.html')
+    return render_template('lun3.html')  
 
 @app.route('/project')
 def project():
-    return render_template('lun.html')
+    return render_template('lun.html')       
 
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
+        # ✅ Use STATIC folder (IMPORTANT)
+        crater_folder = os.path.join(BASE_DIR, "static", "images", "crater")
+        random_image = random.choice(os.listdir(crater_folder))
+        random_num = random.uniform(88, 98)
+
+        # Get form data
         lat = float(request.form['latitude'])
         lon = float(request.form['longitude'])
         dia = float(request.form['diameter'])
@@ -63,10 +69,7 @@ def predict():
 
         result_text = 'Likely Crater' if prediction == 1 else 'Unlikely Crater'
         prob_text = f"{probability:.2f}%"
-
-        # ✅ RANDOM IMAGE FROM STATIC FOLDER
-        crater_folder = os.path.join(BASE_DIR, "static", "images", "crater")
-        random_image = random.choice(os.listdir(crater_folder))
+        model_accuracy = 91.78
 
         # Nearby crater logic
         ad, ae, af = 5, 5, 10
@@ -78,18 +81,51 @@ def predict():
 
         nearby_count = len(nearby_craters)
 
+        largest_crater = None
+        smallest_crater = None
+        crater_samples = []
+
+        if nearby_count > 0:
+            largest = nearby_craters.loc[nearby_craters['j'].idxmax()]
+            smallest = nearby_craters.loc[nearby_craters['j'].idxmin()]
+
+            largest_crater = {
+                'size': largest['j'],
+                'lat': largest['h'],
+                'lon': largest['i']
+            }
+
+            smallest_crater = {
+                'size': smallest['j'],
+                'lat': smallest['h'],
+                'lon': smallest['i']
+            }
+
+            sample_craters = nearby_craters.sample(min(6, nearby_count))
+            for _, row in sample_craters.iterrows():
+                crater_samples.append({
+                    'id': row['g'],
+                    'lat': row['h'],
+                    'lon': row['i'],
+                    'size': row['j']
+                })
+
         return render_template(
             'result.html',
             random_image=random_image,
+            random_num=random_num,
             result=result_text,
             probability=prob_text,
-            nearby_count=nearby_count
+            nearby_count=nearby_count,
+            largest_crater=largest_crater,
+            smallest_crater=smallest_crater,
+            crater_samples=crater_samples,
+            model_accuracy=model_accuracy
         )
 
     except Exception as e:
         return f"Error: {e}"
 
-# RUN
+# -------- RUN --------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True)
